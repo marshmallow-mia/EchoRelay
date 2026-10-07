@@ -118,12 +118,14 @@ async Task<T?> Expect<T>(ClientWebSocket ws, TimeSpan timeout) where T : Message
     return null;
 }
 
-// --host REGION --start "command": a game server host as EchoRelay.Host is, on any OS: runs the command for each start
-// request it accepts (the build id and the requester's name are appended), and answers stop requests by logging them.
+// --host REGION --start "command" [--builds a,b]: a game server host as EchoRelay.Host is, on any OS: runs the command for
+// each start request it accepts (the build id and the requester's name are appended), and answers stop requests by logging
+// them. --builds names the builds it offers (default halloween).
 if (Array.IndexOf(args, "--host") >= 0)
 {
     string region = Arg(args, "--host", "EU");
     string command = Arg(args, "--start", "true");
+    string[] builds = Arg(args, "--builds", "halloween").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     var hostSocket = new ClientWebSocket();
     await hostSocket.ConnectAsync(new Uri($"ws://{relay}/hosts"), CancellationToken.None);
     async Task SendJson(Newtonsoft.Json.Linq.JObject json)
@@ -131,7 +133,7 @@ if (Array.IndexOf(args, "--host") >= 0)
         Say($"-> {json.ToString(Newtonsoft.Json.Formatting.None)}");
         await hostSocket.SendAsync(Encoding.UTF8.GetBytes(json.ToString(Newtonsoft.Json.Formatting.None)), WebSocketMessageType.Text, true, CancellationToken.None);
     }
-    await SendJson(new Newtonsoft.Json.Linq.JObject { ["t"] = "hello", ["region"] = region, ["name"] = name, ["builds"] = new Newtonsoft.Json.Linq.JArray("halloween") });
+    await SendJson(new Newtonsoft.Json.Linq.JObject { ["t"] = "hello", ["region"] = region, ["name"] = name, ["builds"] = new Newtonsoft.Json.Linq.JArray(builds) });
     var hostBuffer = new byte[65536];
     while (hostSocket.State == WebSocketState.Open)
     {
