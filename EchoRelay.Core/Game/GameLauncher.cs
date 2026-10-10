@@ -19,6 +19,27 @@ namespace EchoRelay.Core.Game
             args.Add(tickRate.Value.ToString());
         }
 
+        /// <summary>
+        /// Starts a game executable. Elsewhere than Windows it runs through Wine ($ECHORELAY_WINE, else "wine"), which
+        /// execs the game in place, so the returned process is the game itself.
+        /// </summary>
+        private static Process? Start(string executableFilePath, IEnumerable<string> args, string? workingDirectory = null)
+        {
+            ProcessStartInfo startInfo;
+            if (OperatingSystem.IsWindows())
+                startInfo = new ProcessStartInfo(executableFilePath);
+            else
+            {
+                startInfo = new ProcessStartInfo(Environment.GetEnvironmentVariable("ECHORELAY_WINE") is { Length: > 0 } wine ? wine : "wine");
+                startInfo.ArgumentList.Add(executableFilePath);
+            }
+            foreach (string arg in args)
+                startInfo.ArgumentList.Add(arg);
+            if (workingDirectory != null)
+                startInfo.WorkingDirectory = workingDirectory;
+            return Process.Start(startInfo);
+        }
+
         public static Process? Launch(string executableFilePath, LaunchRole role = LaunchRole.Client, bool windowed = false, bool spectatorStream = false, bool moderator = false, bool noOVR = false, bool headless = false, uint? timeStep = null, List<string>? additionalArgs = null)
         {
             // Create a list of arguments
@@ -41,11 +62,7 @@ namespace EchoRelay.Core.Game
                 if (headless)
                     args.Add("-headless");
                 AddTickRate(args, role, timeStep);
-                ProcessStartInfo startInfo = new ProcessStartInfo(executableFilePath);
-                foreach (string arg in args)
-                    startInfo.ArgumentList.Add(arg);
-                startInfo.WorkingDirectory = Directory.GetParent(executableFilePath)?.Parent?.Parent?.FullName ?? "";
-                return Process.Start(startInfo);
+                return Start(executableFilePath, args, Directory.GetParent(executableFilePath)?.Parent?.Parent?.FullName ?? "");
             }
 
             // The halloween and christmas 2018 lobby builds take the same flags as summer (EchoRelay.Patch emulates the ones they lack).
@@ -61,7 +78,7 @@ namespace EchoRelay.Core.Game
                 if (headless)
                     args.Add("-headless");
                 AddTickRate(args, role, timeStep);
-                return Process.Start(executableFilePath, args);
+                return Start(executableFilePath, args);
             }
 
             // Add any role related arguments (client role = no CLI argument here)
@@ -94,7 +111,7 @@ namespace EchoRelay.Core.Game
             }
 
             // Start the process with our provided arguments.
-            return Process.Start(executableFilePath, args);
+            return Start(executableFilePath, args);
         }
 
         /// <summary>

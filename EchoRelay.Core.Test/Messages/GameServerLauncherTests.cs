@@ -96,7 +96,7 @@ namespace EchoRelay.Core.Test.Messages
         [Fact]
         public void FindsTheProcessListeningOnAUdpPort()
         {
-            if (!OperatingSystem.IsWindows())
+            if (!OperatingSystem.IsWindows() && !OperatingSystem.IsLinux())
                 return;
             using UdpClient udp = new UdpClient(new IPEndPoint(IPAddress.Any, 0));
             ushort port = (ushort)((IPEndPoint)udp.Client.LocalEndPoint!).Port;
@@ -106,7 +106,7 @@ namespace EchoRelay.Core.Test.Messages
         [Fact]
         public void LeavesProcessesItDidntStartAlone()
         {
-            if (!OperatingSystem.IsWindows())
+            if (!OperatingSystem.IsWindows() && !OperatingSystem.IsLinux())
                 return;
             // This test process owns the port, but the launcher never started it, so nothing is closed.
             using UdpClient udp = new UdpClient(new IPEndPoint(IPAddress.Any, 0));

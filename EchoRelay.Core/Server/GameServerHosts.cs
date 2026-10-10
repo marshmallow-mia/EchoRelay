@@ -589,7 +589,7 @@ namespace EchoRelay.Core.Server
         /// <returns>How many were closed.</returns>
         public int StopIdle(IEnumerable<ushort> ports)
         {
-            HashSet<int> pids = new HashSet<int>(ports.Select(port => UdpPortOwner(port)).Where(pid => pid != 0));
+            HashSet<int> pids = new HashSet<int>(ports.SelectMany(UdpPortOwners));
             int stopped = 0;
             lock (_lock)
             {
@@ -615,10 +615,65 @@ namespace EchoRelay.Core.Server
         private static extern uint GetExtendedUdpTable(IntPtr table, ref int size, bool order, int addressFamily, int tableClass, uint reserved);
 
         /// <summary>
-        /// The process listening on an IPv4 UDP port (0 if none, or not on Windows).
+        /// Every process holding a UDP port's socket. Under Wine (Linux) that's the game and wineserver, which both hold it.
+        /// </summary>
+        public static IEnumerable<int> UdpPortOwners(ushort port)
+        {
+            if (OperatingSystem.IsLinux())
+                return LinuxUdpPortOwners(port);
+            int pid = UdpPortOwner(port);
+            return pid != 0 ? new[] { pid } : Array.Empty<int>();
+        }
+
+        /// <summary>
+        /// The processes holding a UDP socket bound to a port, from /proc: the socket's inode in /proc/net/udp(6), then the
+        /// processes with an fd on it (only our own user's processes can be read).
+        /// </summary>
+        private static List<int> LinuxUdpPortOwners(ushort port)
+        {
+            HashSet<string> sockets = new HashSet<string>();
+            foreach (string table in new[] { "/proc/net/udp", "/proc/net/udp6" })
+            {
+                if (!File.Exists(table))
+                    continue;
+                // "sl local_address rem_address st tx_queue:rx_queue tr:tm->when retrnsmt uid timeout inode ...", addresses as HEXIP:HEXPORT.
+                foreach (string line in File.ReadLines(table).Skip(1))
+                {
+                    string[] fields = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    if (fields.Length < 10)
+                        continue;
+                    int colon = fields[1].LastIndexOf(':');
+                    if (colon >= 0 && Convert.ToUInt16(fields[1][(colon + 1)..], 16) == port && fields[9] != "0")
+                        sockets.Add($"socket:[{fields[9]}]");
+                }
+            }
+            List<int> owners = new List<int>();
+            if (sockets.Count == 0)
+                return owners;
+            foreach (string dir in Directory.EnumerateDirectories("/proc"))
+            {
+                if (!int.TryParse(Path.GetFileName(dir), out int pid))
+                    continue;
+                try
+                {
+                    if (Directory.EnumerateFileSystemEntries(Path.Combine(dir, "fd")).Any(fd => new FileInfo(fd).LinkTarget is string target && sockets.Contains(target)))
+                        owners.Add(pid);
+                }
+                catch
+                {
+                    // Another user's process, or one that just exited.
+                }
+            }
+            return owners;
+        }
+
+        /// <summary>
+        /// The process listening on an IPv4 UDP port (0 if none, or not on Windows or Linux).
         /// </summary>
         public static int UdpPortOwner(ushort port)
         {
+            if (OperatingSystem.IsLinux())
+                return LinuxUdpPortOwners(port).FirstOrDefault();
             if (!OperatingSystem.IsWindows())
                 return 0;
             const int AF_INET = 2, UDP_TABLE_OWNER_PID = 1;
